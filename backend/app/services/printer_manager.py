@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.app.models.printer import Printer
-from backend.app.services.bambu_mqtt import BambuMQTTClient, PrinterState
+from backend.app.services.bambu_mqtt import BambuMQTTClient, PrinterState, MQTTLogEntry
 from backend.app.services.bambu_ftp import BambuFTPClient
 
 
@@ -118,6 +118,32 @@ class PrinterManager:
             return self._clients[printer_id].start_print(filename)
         return False
 
+    def enable_logging(self, printer_id: int, enabled: bool = True) -> bool:
+        """Enable or disable MQTT logging for a printer."""
+        if printer_id in self._clients:
+            self._clients[printer_id].enable_logging(enabled)
+            return True
+        return False
+
+    def get_logs(self, printer_id: int) -> list[MQTTLogEntry]:
+        """Get MQTT logs for a printer."""
+        if printer_id in self._clients:
+            return self._clients[printer_id].get_logs()
+        return []
+
+    def clear_logs(self, printer_id: int) -> bool:
+        """Clear MQTT logs for a printer."""
+        if printer_id in self._clients:
+            self._clients[printer_id].clear_logs()
+            return True
+        return False
+
+    def is_logging_enabled(self, printer_id: int) -> bool:
+        """Check if logging is enabled for a printer."""
+        if printer_id in self._clients:
+            return self._clients[printer_id].logging_enabled
+        return False
+
     async def test_connection(
         self,
         ip_address: str,
@@ -159,6 +185,10 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None) ->
         "layer_num": state.layer_num,
         "total_layers": state.total_layers,
         "temperatures": state.temperatures,
+        "hms_errors": [
+            {"code": e.code, "module": e.module, "severity": e.severity}
+            for e in (state.hms_errors or [])
+        ],
     }
     # Add cover URL if there's an active print and printer_id is provided
     if printer_id and state.state == "RUNNING" and state.gcode_file:

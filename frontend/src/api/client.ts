@@ -34,6 +34,12 @@ export interface Printer {
   updated_at: string;
 }
 
+export interface HMSError {
+  code: string;
+  module: number;
+  severity: number;  // 1=fatal, 2=serious, 3=common, 4=info
+}
+
 export interface PrinterStatus {
   id: number;
   name: string;
@@ -54,6 +60,7 @@ export interface PrinterStatus {
     chamber?: number;
   } | null;
   cover_url: string | null;
+  hms_errors: HMSError[];
 }
 
 export interface PrinterCreate {
@@ -235,6 +242,19 @@ export interface SmartPlugTestResult {
   device_name: string | null;
 }
 
+// MQTT Logging types
+export interface MQTTLogEntry {
+  timestamp: string;
+  topic: string;
+  direction: 'in' | 'out';
+  payload: Record<string, unknown>;
+}
+
+export interface MQTTLogsResponse {
+  logging_enabled: boolean;
+  logs: MQTTLogEntry[];
+}
+
 // API functions
 export const api = {
   // Printers
@@ -261,6 +281,22 @@ export const api = {
   disconnectPrinter: (id: number) =>
     request<{ connected: boolean }>(`/printers/${id}/disconnect`, {
       method: 'POST',
+    }),
+
+  // MQTT Debug Logging
+  enableMQTTLogging: (printerId: number) =>
+    request<{ logging_enabled: boolean }>(`/printers/${printerId}/logging/enable`, {
+      method: 'POST',
+    }),
+  disableMQTTLogging: (printerId: number) =>
+    request<{ logging_enabled: boolean }>(`/printers/${printerId}/logging/disable`, {
+      method: 'POST',
+    }),
+  getMQTTLogs: (printerId: number) =>
+    request<MQTTLogsResponse>(`/printers/${printerId}/logging`),
+  clearMQTTLogs: (printerId: number) =>
+    request<{ status: string }>(`/printers/${printerId}/logging`, {
+      method: 'DELETE',
     }),
 
   // Printer File Manager
@@ -507,4 +543,5 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ip_address, username, password }),
     }),
+
 };

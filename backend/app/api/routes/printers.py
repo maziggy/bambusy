@@ -18,6 +18,7 @@ from backend.app.schemas.printer import (
     PrinterUpdate,
     PrinterResponse,
     PrinterStatus,
+    HMSErrorResponse,
 )
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.bambu_ftp import (
@@ -138,6 +139,12 @@ async def get_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)
     if state.state == "RUNNING" and state.gcode_file:
         cover_url = f"/api/v1/printers/{printer_id}/cover"
 
+    # Convert HMS errors to response format
+    hms_errors = [
+        HMSErrorResponse(code=e.code, module=e.module, severity=e.severity)
+        for e in (state.hms_errors or [])
+    ]
+
     return PrinterStatus(
         id=printer_id,
         name=printer.name,
@@ -152,6 +159,7 @@ async def get_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)
         total_layers=state.total_layers,
         temperatures=state.temperatures,
         cover_url=cover_url,
+        hms_errors=hms_errors,
     )
 
 
@@ -410,3 +418,72 @@ async def get_printer_storage(
     storage_info = await get_storage_info_async(printer.ip_address, printer.access_code)
 
     return storage_info or {"used_bytes": None, "free_bytes": None}
+
+
+# ============================================
+# MQTT Debug Logging Endpoints
+# ============================================
+
+@router.post("/{printer_id}/logging/enable")
+async def enable_mqtt_logging(printer_id: int, db: AsyncSession = Depends(get_db)):
+    """Enable MQTT message logging for a printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    success = printer_manager.enable_logging(printer_id, True)
+    if not success:
+        raise HTTPException(400, "Printer not connected")
+
+    return {"logging_enabled": True}
+
+
+@router.post("/{printer_id}/logging/disable")
+async def disable_mqtt_logging(printer_id: int, db: AsyncSession = Depends(get_db)):
+    """Disable MQTT message logging for a printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    success = printer_manager.enable_logging(printer_id, False)
+    if not success:
+        raise HTTPException(400, "Printer not connected")
+
+    return {"logging_enabled": False}
+
+
+@router.get("/{printer_id}/logging")
+async def get_mqtt_logs(printer_id: int, db: AsyncSession = Depends(get_db)):
+    """Get MQTT message logs for a printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    logs = printer_manager.get_logs(printer_id)
+    return {
+        "logging_enabled": printer_manager.is_logging_enabled(printer_id),
+        "logs": [
+            {
+                "timestamp": log.timestamp,
+                "topic": log.topic,
+                "direction": log.direction,
+                "payload": log.payload,
+            }
+            for log in logs
+        ],
+    }
+
+
+@router.delete("/{printer_id}/logging")
+async def clear_mqtt_logs(printer_id: int, db: AsyncSession = Depends(get_db)):
+    """Clear MQTT message logs for a printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    printer_manager.clear_logs(printer_id)
+    return {"status": "cleared"}

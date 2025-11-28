@@ -11,6 +11,8 @@ import {
   RefreshCw,
   Box,
   HardDrive,
+  AlertTriangle,
+  Terminal,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { Printer, PrinterCreate } from '../api/client';
@@ -18,6 +20,7 @@ import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { FileManagerModal } from '../components/FileManagerModal';
+import { MQTTDebugModal } from '../components/MQTTDebugModal';
 
 function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -79,6 +82,7 @@ function PrinterCard({ printer, hideIfDisconnected }: { printer: Printer; hideIf
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showFileManager, setShowFileManager] = useState(false);
+  const [showMQTTDebug, setShowMQTTDebug] = useState(false);
 
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printer.id],
@@ -131,6 +135,28 @@ function PrinterCard({ printer, hideIfDisconnected }: { printer: Printer; hideIf
               )}
               {status?.connected ? 'Connected' : 'Offline'}
             </span>
+            {/* HMS Status Indicator */}
+            {status?.connected && (
+              <span
+                className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+                  status.hms_errors && status.hms_errors.length > 0
+                    ? status.hms_errors.some(e => e.severity <= 2)
+                      ? 'bg-red-500/20 text-red-400'
+                      : 'bg-orange-500/20 text-orange-400'
+                    : 'bg-bambu-green/20 text-bambu-green'
+                }`}
+                title={
+                  status.hms_errors && status.hms_errors.length > 0
+                    ? `${status.hms_errors.length} HMS error(s)`
+                    : 'No HMS errors'
+                }
+              >
+                <AlertTriangle className="w-3 h-3" />
+                {status.hms_errors && status.hms_errors.length > 0
+                  ? status.hms_errors.length
+                  : 'OK'}
+              </span>
+            )}
             <div className="relative">
               <Button
                 variant="ghost"
@@ -150,6 +176,16 @@ function PrinterCard({ printer, hideIfDisconnected }: { printer: Printer; hideIf
                   >
                     <RefreshCw className="w-4 h-4" />
                     Reconnect
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowMQTTDebug(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Terminal className="w-4 h-4" />
+                    MQTT Debug
                   </button>
                   <button
                     className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-bambu-dark-tertiary flex items-center gap-2"
@@ -287,6 +323,15 @@ function PrinterCard({ printer, hideIfDisconnected }: { printer: Printer; hideIf
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowFileManager(false)}
+        />
+      )}
+
+      {/* MQTT Debug Modal */}
+      {showMQTTDebug && (
+        <MQTTDebugModal
+          printerId={printer.id}
+          printerName={printer.name}
+          onClose={() => setShowMQTTDebug(false)}
         />
       )}
     </Card>

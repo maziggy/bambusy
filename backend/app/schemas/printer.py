@@ -34,6 +34,12 @@ class PrinterResponse(PrinterBase):
         from_attributes = True
 
 
+class HMSErrorResponse(BaseModel):
+    code: str
+    module: int
+    severity: int  # 1=fatal, 2=serious, 3=common, 4=info
+
+
 class PrinterStatus(BaseModel):
     id: int
     name: str
@@ -48,3 +54,4 @@ class PrinterStatus(BaseModel):
     total_layers: int | None = None
     temperatures: dict | None = None
     cover_url: str | None = None
+    hms_errors: list[HMSErrorResponse] = []

@@ -1,10 +1,30 @@
 import json
 import ssl
 import asyncio
+from collections import deque
+from datetime import datetime
 from typing import Callable
 from dataclasses import dataclass, field
 
 import paho.mqtt.client as mqtt
+
+
+@dataclass
+class MQTTLogEntry:
+    """Log entry for MQTT message debugging."""
+    timestamp: str
+    topic: str
+    direction: str  # "in" or "out"
+    payload: dict
+
+
+@dataclass
+class HMSError:
+    """Health Management System error from printer."""
+    code: str
+    module: int
+    severity: int  # 1=fatal, 2=serious, 3=common, 4=info
+    message: str = ""
 
 
 @dataclass
@@ -21,6 +41,7 @@ class PrinterState:
     raw_data: dict = field(default_factory=dict)
     gcode_file: str | None = None
     subtask_id: str | None = None
+    hms_errors: list = field(default_factory=list)  # List of HMSError
 
 
 class BambuMQTTClient:
@@ -49,6 +70,8 @@ class BambuMQTTClient:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._previous_gcode_state: str | None = None
         self._previous_gcode_file: str | None = None
+        self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
+        self._logging_enabled: bool = False
 
     @property
     def topic_subscribe(self) -> str:
@@ -75,6 +98,14 @@ class BambuMQTTClient:
     def _on_message(self, client, userdata, msg):
         try:
             payload = json.loads(msg.payload.decode())
+            # Log message if logging is enabled
+            if self._logging_enabled:
+                self._message_log.append(MQTTLogEntry(
+                    timestamp=datetime.now().isoformat(),
+                    topic=msg.topic,
+                    direction="in",
+                    payload=payload,
+                ))
             self._process_message(payload)
         except json.JSONDecodeError:
             pass
@@ -130,6 +161,32 @@ class BambuMQTTClient:
             temps["chamber"] = float(data["chamber_temper"])
         if temps:
             self.state.temperatures = temps
+
+        # Parse HMS (Health Management System) errors
+        if "hms" in data:
+            hms_list = data["hms"]
+            self.state.hms_errors = []
+            if isinstance(hms_list, list):
+                for hms in hms_list:
+                    if isinstance(hms, dict):
+                        # HMS format: {"attr": code, "code": full_code}
+                        # The code is a hex string, severity is in bits
+                        code = hms.get("code", hms.get("attr", "0"))
+                        if isinstance(code, int):
+                            code = hex(code)
+                        # Parse severity from code (typically last 4 bits indicate level)
+                        try:
+                            code_int = int(str(code).replace("0x", ""), 16) if code else 0
+                            severity = (code_int >> 16) & 0xF  # Extract severity bits
+                            module = (code_int >> 24) & 0xFF  # Extract module bits
+                        except (ValueError, TypeError):
+                            severity = 3
+                            module = 0
+                        self.state.hms_errors.append(HMSError(
+                            code=str(code),
+                            module=module,
+                            severity=severity if severity > 0 else 3,
+                        ))
 
         self.state.raw_data = data
 
@@ -236,4 +293,31 @@ class BambuMQTTClient:
     def send_command(self, command: dict):
         """Send a command to the printer."""
         if self._client and self.state.connected:
+            # Log outgoing message if logging is enabled
+            if self._logging_enabled:
+                self._message_log.append(MQTTLogEntry(
+                    timestamp=datetime.now().isoformat(),
+                    topic=self.topic_publish,
+                    direction="out",
+                    payload=command,
+                ))
             self._client.publish(self.topic_publish, json.dumps(command))
+
+    def enable_logging(self, enabled: bool = True):
+        """Enable or disable MQTT message logging."""
+        self._logging_enabled = enabled
+        if not enabled:
+            self._message_log.clear()
+
+    def get_logs(self) -> list[MQTTLogEntry]:
+        """Get all logged MQTT messages."""
+        return list(self._message_log)
+
+    def clear_logs(self):
+        """Clear the message log."""
+        self._message_log.clear()
+
+    @property
+    def logging_enabled(self) -> bool:
+        """Check if logging is enabled."""
+        return self._logging_enabled
