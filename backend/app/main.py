@@ -287,7 +287,7 @@ async def on_print_complete(printer_id: int, data: dict):
         await service.update_archive_status(
             archive_id,
             status=status,
-            completed_at=datetime.now() if status in ("completed", "failed") else None,
+            completed_at=datetime.now() if status in ("completed", "failed", "aborted") else None,
         )
 
         await ws_manager.send_archive_updated({

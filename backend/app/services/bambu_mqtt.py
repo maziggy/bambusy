@@ -251,18 +251,24 @@ class BambuMQTTClient:
                 "raw_data": data,
             })
 
-        # Detect print completion (FINISH = success, FAILED = error)
+        # Detect print completion (FINISH = success, FAILED = error, IDLE = aborted)
         if (
             self._previous_gcode_state == "RUNNING"
-            and self.state.state in ("FINISH", "FAILED")
+            and self.state.state in ("FINISH", "FAILED", "IDLE")
             and self.on_print_complete
         ):
+            if self.state.state == "FINISH":
+                status = "completed"
+            elif self.state.state == "FAILED":
+                status = "failed"
+            else:
+                status = "aborted"
             logger.info(
                 f"[{self.serial_number}] PRINT COMPLETE detected - state: {self.state.state}, "
-                f"file: {self._previous_gcode_file or current_file}"
+                f"status: {status}, file: {self._previous_gcode_file or current_file}"
             )
             self.on_print_complete({
-                "status": "completed" if self.state.state == "FINISH" else "failed",
+                "status": status,
                 "filename": self._previous_gcode_file or current_file,
                 "raw_data": data,
             })
