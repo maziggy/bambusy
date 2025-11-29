@@ -141,6 +141,7 @@ export interface BulkUploadResult {
 export interface AppSettings {
   auto_archive: boolean;
   save_thumbnails: boolean;
+  capture_finish_photo: boolean;
   default_filament_cost: number;
   currency: string;
 }
@@ -490,6 +491,8 @@ export const api = {
     }),
   resetSettings: () =>
     request<AppSettings>('/settings/reset', { method: 'POST' }),
+  checkFfmpeg: () =>
+    request<{ installed: boolean; path: string | null }>('/settings/check-ffmpeg'),
 
   // Cloud
   getCloudStatus: () => request<CloudAuthStatus>('/cloud/status'),

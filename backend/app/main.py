@@ -276,6 +276,53 @@ async def on_print_complete(printer_id: int, data: dict):
             "status": status,
         })
 
+    # Capture finish photo from printer camera
+    try:
+        async with async_session() as db:
+            # Check if finish photo capture is enabled
+            from backend.app.api.routes.settings import get_setting
+            capture_enabled = await get_setting(db, "capture_finish_photo")
+            if capture_enabled is None or capture_enabled.lower() == "true":
+                # Get printer details
+                from backend.app.models.printer import Printer
+                from sqlalchemy import select
+                result = await db.execute(
+                    select(Printer).where(Printer.id == printer_id)
+                )
+                printer = result.scalar_one_or_none()
+
+                if printer and archive_id:
+                    # Get archive to find its directory
+                    from backend.app.models.archive import PrintArchive
+                    result = await db.execute(
+                        select(PrintArchive).where(PrintArchive.id == archive_id)
+                    )
+                    archive = result.scalar_one_or_none()
+
+                    if archive:
+                        from backend.app.services.camera import capture_finish_photo
+                        from pathlib import Path
+
+                        archive_dir = app_settings.base_dir / Path(archive.file_path).parent
+                        photo_filename = await capture_finish_photo(
+                            printer_id=printer_id,
+                            ip_address=printer.ip_address,
+                            access_code=printer.access_code,
+                            model=printer.model,
+                            archive_dir=archive_dir,
+                        )
+
+                        if photo_filename:
+                            # Add photo to archive's photos list
+                            photos = archive.photos or []
+                            photos.append(photo_filename)
+                            archive.photos = photos
+                            await db.commit()
+                            logger.info(f"Added finish photo to archive {archive_id}: {photo_filename}")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Finish photo capture failed: {e}")
+
     # Smart plug automation: schedule turn off when print completes
     try:
         async with async_session() as db:
