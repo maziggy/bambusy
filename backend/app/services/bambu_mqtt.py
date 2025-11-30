@@ -116,6 +116,9 @@ class BambuMQTTClient:
             client.subscribe(self.topic_subscribe)
             # Request full status update
             self._request_push_all()
+            # Immediately broadcast connection state change
+            if self.on_state_change:
+                self.on_state_change(self.state)
         else:
             self.state.connected = False
 
