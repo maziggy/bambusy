@@ -146,7 +146,7 @@ async def get_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)
 
     # Convert HMS errors to response format
     hms_errors = [
-        HMSErrorResponse(code=e.code, module=e.module, severity=e.severity)
+        HMSErrorResponse(code=e.code, attr=e.attr, module=e.module, severity=e.severity)
         for e in (state.hms_errors or [])
     ]
 

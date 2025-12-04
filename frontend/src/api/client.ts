@@ -37,6 +37,7 @@ export interface Printer {
 
 export interface HMSError {
   code: string;
+  attr: number;  // Attribute value for constructing wiki URL
   module: number;
   severity: number;  // 1=fatal, 2=serious, 3=common, 4=info
 }

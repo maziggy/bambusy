@@ -280,7 +280,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None) ->
         "total_layers": state.total_layers,
         "temperatures": state.temperatures,
         "hms_errors": [
-            {"code": e.code, "module": e.module, "severity": e.severity}
+            {"code": e.code, "attr": e.attr, "module": e.module, "severity": e.severity}
             for e in (state.hms_errors or [])
         ],
     }

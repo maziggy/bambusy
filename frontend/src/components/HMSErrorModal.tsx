@@ -1,3 +1,4 @@
+// HMS Error Modal - Updated Dec 4 2025 for attr field support
 import { useEffect } from 'react';
 import { X, AlertTriangle, AlertCircle, Info, ExternalLink } from 'lucide-react';
 import type { HMSError } from '../api/client';
@@ -8,20 +9,25 @@ interface HMSErrorModalProps {
   onClose: () => void;
 }
 
-// HMS error code descriptions (common ones)
+// HMS error code descriptions keyed by full HMS code (attr + code combined)
+// Format: "AAAA_BBBB_CCCC_DDDD" where AAAA_BBBB is from attr, CCCC_DDDD is from code
 const HMS_DESCRIPTIONS: Record<string, string> = {
-  '0x20054': 'The heatbed temperature is abnormal. The sensor may be disconnected or damaged.',
-  '0x50005': 'Motor driver overheated. Let the printer cool down.',
-  '0x50006': 'Motor driver communication error.',
-  '0x70001': 'AMS communication error.',
-  '0x70002': 'AMS filament runout.',
-  '0x70003': 'AMS filament not detected.',
-  '0xC0003': 'First layer inspection failed.',
-  '0xC0004': 'Nozzle clog detected.',
-  '0xC8000': 'Foreign object detected on print bed.',
-  '0x50000': 'Motor X axis lost steps.',
-  '0x50001': 'Motor Y axis lost steps.',
-  '0x50002': 'Motor Z axis lost steps.',
+  // H2D specific errors
+  '0700_5500_0002_0001': 'A binding error occurred between AMS and the extruder. Please perform AMS initialization again.',
+  '0500_0300_0002_000E': 'Some modules are incompatible with the printer firmware version. Please update firmware.',
+  // Common errors
+  '0300_0100_0002_0054': 'The heatbed temperature is abnormal. The sensor may be disconnected or damaged.',
+  '0500_0100_0005_0005': 'Motor driver overheated. Let the printer cool down.',
+  '0500_0100_0005_0006': 'Motor driver communication error.',
+  '0700_0100_0007_0001': 'AMS communication error.',
+  '0700_0100_0007_0002': 'AMS filament runout.',
+  '0700_0100_0007_0003': 'AMS filament not detected.',
+  '0C00_0100_000C_0003': 'First layer inspection failed.',
+  '0C00_0100_000C_0004': 'Nozzle clog detected.',
+  '0C00_0100_000C_8000': 'Foreign object detected on print bed.',
+  '0500_0100_0005_0000': 'Motor X axis lost steps.',
+  '0500_0100_0005_0001': 'Motor Y axis lost steps.',
+  '0500_0100_0005_0002': 'Motor Z axis lost steps.',
 };
 
 function getSeverityInfo(severity: number): { label: string; color: string; bgColor: string; Icon: typeof AlertTriangle } {
@@ -38,18 +44,38 @@ function getSeverityInfo(severity: number): { label: string; color: string; bgCo
   }
 }
 
-function getHMSWikiUrl(code: string): string {
-  // Convert hex code to format used by Bambu Lab wiki
-  // Example: 0x20054 -> HMS_0200_0005_0004
-  const codeNum = parseInt(code.replace('0x', ''), 16);
-  const part1 = ((codeNum >> 24) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-  const part2 = ((codeNum >> 16) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-  const part3 = ((codeNum >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-  const part4 = (codeNum & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-  return `https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/HMS_${part1}${part2}_${part3}${part4}`;
+function getFullHMSCode(attr: number, code: number): string {
+  // Construct the full HMS code from attr and code
+  // Format: AAAA_BBBB_CCCC_DDDD
+  // AAAA_BBBB from attr, CCCC_DDDD from code
+  const a1 = ((attr >> 24) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  const a2 = ((attr >> 16) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  const a3 = ((attr >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  const a4 = (attr & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+
+  const c1 = ((code >> 24) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  const c2 = ((code >> 16) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  const c3 = ((code >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  const c4 = (code & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+
+  return `${a1}${a2}_${a3}${a4}_${c1}${c2}_${c3}${c4}`;
+}
+
+function getHMSWikiUrl(attr: number, code: number, printerName: string): string {
+  // Construct wiki URL from attr and code
+  const fullCode = getFullHMSCode(attr, code);
+
+  // Use H2 wiki path for H2D printers, otherwise use X1 path
+  const isH2 = printerName.toLowerCase().includes('h2');
+  const basePath = isH2 ? 'h2' : 'x1';
+
+  return `https://wiki.bambulab.com/en/${basePath}/troubleshooting/hmscode/${fullCode}`;
 }
 
 export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalProps) {
+  // Debug: log errors to see what data we're receiving
+  console.log('HMSErrorModal errors:', JSON.stringify(errors, null, 2));
+
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -87,8 +113,11 @@ export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalPro
             <div className="space-y-3">
               {errors.map((error, index) => {
                 const { label, color, bgColor, Icon } = getSeverityInfo(error.severity);
-                const description = HMS_DESCRIPTIONS[error.code] || 'Unknown error. Click the link below for details.';
-                const wikiUrl = getHMSWikiUrl(error.code);
+                const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
+                const fullHMSCode = getFullHMSCode(error.attr, codeNum);
+                const description = HMS_DESCRIPTIONS[fullHMSCode] || 'Unknown error. Click the link below for details.';
+                const wikiUrl = getHMSWikiUrl(error.attr, codeNum, printerName);
+                const displayCode = `HMS_${fullHMSCode.replace(/_/g, '-')}`;
 
                 return (
                   <div
@@ -99,7 +128,7 @@ export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalPro
                       <Icon className={`w-5 h-5 ${color} flex-shrink-0 mt-0.5`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className={`font-mono text-sm ${color}`}>{error.code}</span>
+                          <span className={`font-mono text-sm ${color}`}>{displayCode}</span>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${bgColor} ${color}`}>
                             {label}
                           </span>

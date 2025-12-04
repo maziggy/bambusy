@@ -39,6 +39,7 @@ class PrinterResponse(PrinterBase):
 
 class HMSErrorResponse(BaseModel):
     code: str
+    attr: int = 0  # Attribute value for constructing wiki URL
     module: int
     severity: int  # 1=fatal, 2=serious, 3=common, 4=info
 

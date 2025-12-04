@@ -26,6 +26,7 @@ class MQTTLogEntry:
 class HMSError:
     """Health Management System error from printer."""
     code: str
+    attr: int  # Attribute value for constructing wiki URL
     module: int
     severity: int  # 1=fatal, 2=serious, 3=common, 4=info
     message: str = ""
@@ -967,23 +968,24 @@ class BambuMQTTClient:
             if isinstance(hms_list, list):
                 for hms in hms_list:
                     if isinstance(hms, dict):
-                        # HMS format: {"attr": code, "code": full_code}
-                        # The code is a hex string, severity is in bits
-                        code = hms.get("code", hms.get("attr", "0"))
-                        if isinstance(code, int):
-                            code = hex(code)
-                        # Parse severity from code (typically last 4 bits indicate level)
-                        try:
-                            code_int = int(str(code).replace("0x", ""), 16) if code else 0
-                            severity = (code_int >> 16) & 0xF  # Extract severity bits
-                            module = (code_int >> 24) & 0xFF  # Extract module bits
-                        except (ValueError, TypeError):
-                            severity = 3
-                            module = 0
+                        # HMS format: {"attr": attribute_code, "code": error_code}
+                        # attr contains module/severity info, code contains error number
+                        # Both are needed to construct the wiki URL
+                        attr = hms.get("attr", 0)
+                        code = hms.get("code", 0)
+                        if isinstance(attr, str):
+                            attr = int(attr.replace("0x", ""), 16) if attr else 0
+                        if isinstance(code, str):
+                            code = int(code.replace("0x", ""), 16) if code else 0
+                        # Severity is in attr byte 1 (bits 8-15)
+                        severity = (attr >> 8) & 0xF
+                        # Module is in attr byte 3 (bits 24-31)
+                        module = (attr >> 24) & 0xFF
                         self.state.hms_errors.append(HMSError(
-                            code=str(code),
+                            code=f"0x{code:x}" if code else "0x0",
+                            attr=attr,
                             module=module,
-                            severity=severity if severity > 0 else 3,
+                            severity=severity if severity > 0 else 2,
                         ))
 
         # Parse SD card status
